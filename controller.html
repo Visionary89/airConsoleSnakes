@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title></title>
+    <script type="text/javascript" src="http://www.airconsole.com/api/airconsole-1.2.js"></script>
+    <style>
+        .move_button{
+            outline: 2px solid #21b618;
+            width: 50%;
+            min-width: 33%;
+            max-height: 33%;
+            padding: 20px 0;
+            text-align: center;
+            background: #2b2b2b;
+            color: #bbb;
+            margin: 20px auto;
+            line-height: 327%;
+            font-weight: bold;
+        }
+        body{
+            margin: 0;
+            background: #191919;
+        }
+        .wrapper {
+            margin: 200px auto 0;
+            width: 85%;
+        }
+        .move_button.middle {
+            display: inline-block;
+        }
+        .move_button.active{
+            outline-color: #1c6819;
+            background: #21b618;
+            color: #191919;
+        }
+    </style>
+</head>
+<body>
+<div class="wrapper" id="btrContainer">
+    <div class="move_button" data-move="up">up</div>
+    <div class="move_button middle" data-move="left">left</div><div class="move_button middle" data-move="right">right</div>
+    <div class="move_button" data-move="down">down</div>
+</div>
+<script type="text/javascript">
+    Object.prototype.in_array = function(p_val) {
+        for(var i = 0, l = this.length; i < l; i++)  {
+            if(this[i] == p_val) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    var air_console = new AirConsole();
+
+    // Listen for messages
+     /*air_console.onMessage = function(from, data) {
+
+        air_console.message(from, "Full of pixels!");
+
+        // Show message on device screen
+        var info = document.createElement('DIV');
+        info.innerHTML = data;
+        document.body.appendChild(info);
+    };*/
+    var onTouchStartHandler = function(e) {
+        if(e.target.classList.in_array('move_button')){
+            e.target.setAttribute('class',e.target.getAttribute('class')+' active');
+            if(e.target.getAttribute('data-move')){
+                air_console.message(AirConsole.SCREEN,e.target.getAttribute('data-move'))
+            }
+        }
+        e.preventDefault();
+    };
+
+    var onTouchMoveHandler = function(e) {
+
+        e.preventDefault();
+    };
+
+    var onTouchEndHandler = function(e) {
+        if(e.target.classList.in_array('move_button')){
+            e.target.setAttribute('class', e.target.getAttribute('class').replace(' active',''));
+        }
+
+        e.preventDefault();
+    };
+
+    var buttonsContainer = document.getElementById('btrContainer');
+    buttonsContainer.addEventListener("touchstart", onTouchStartHandler);
+    buttonsContainer.addEventListener("touchmove", onTouchMoveHandler);
+    buttonsContainer.addEventListener("touchend", onTouchEndHandler);
+
+    // Mouse fallback
+    if (!("ontouchstart" in document.createElement("div"))) {
+        buttonsContainer.addEventListener("mousedown", onTouchStartHandler);
+        buttonsContainer.addEventListener("mousemove", onTouchMoveHandler);
+        buttonsContainer.addEventListener("mouseup", onTouchEndHandler);
+    }
+</script>
+
+</body>
+</html>
