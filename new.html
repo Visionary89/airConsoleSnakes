@@ -1,22 +1,25 @@
 <!DOCTYPE html>
-<html style="height: 100%">
+<html>
 <head lang="en">
     <meta charset="UTF-8">
     <title></title>
-    <script type="text/javascript" src="http://code.jquery.com/jquery-1.11.3.min.js"></script>
+    <script type="text/javascript" src="https://code.jquery.com/jquery-1.12.0.min.js"></script>
+    <style type="text/css">
+        html,body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
 </head>
-<body onload="window.screenApp = new makeSnakeMultiplayerApplication()"  style="height: 100%">
+<body onload="window.screenApp = new makeSnakeMultiplayerApplication()">
 <script type="application/javascript">
     /** todo:
      * экран готовности к игре
-     * 3-х секундный отсчет перед игрой
-     * reinit выдрнуть из die()
-     * обработать коллизию змеек
      * проверить интервал после reinit
-     * определитьс ситуацию вигрыша
      */
-    var debug = true;
-    debugger;
+    var debug = false;
+    //debugger;
 
     function makeSnakeMultiplayerApplication(){
         "use strict";
@@ -26,6 +29,7 @@
         this.config = {
             itemSize: 10,
             padding: 20,
+            countDown: 3,
             interval: 100,
             snakeSize: 5,
             background_color: '#2b2b2b',
@@ -110,6 +114,7 @@
         height = Math.ceil(height/this.config.itemSize)*this.config.itemSize;
         $canvas.attr('height', height);
         this.context = canvas.getContext("2d");
+        this.config.font = this.context.font;
         this.width = $canvas.width();
         this.height = $canvas.height();
 
@@ -122,7 +127,26 @@
             this.snakeArray = [];
             this.foodArray = {};
 
+            /**
+             * типы игры:
+             * last - последний выживший победил
+             * (не реализовано) time - самый длинный за опрделенное время поюедил
+             */
+            this.game = {
+                type: 'last',
+                started: false,
+                finished: false,
+                winner: false,
+                interval: this.config.interval,
+                countDown: this.config.countDown
+            };
+
             //только для демонстрации добавим несколько змеек
+            this.createSnake();
+            this.createSnake();
+            this.createSnake();
+            this.createSnake();
+            this.createSnake();
             this.createSnake();
             this.createSnake();
             this.createSnake();
@@ -169,8 +193,32 @@
             //каждая змейка имеет свое стартовое положение и направление движения
             var config = this.playerStartConfig[index];
             this.snakeArray[index]['direction'] = config.direction;
-            var x = Math.round(this.width*config.x/100/this.config.itemSize);
-            var y = Math.round(this.height*config.y/100/this.config.itemSize);
+            var x = Math.ceil(this.width*config.x/100/this.config.itemSize);
+            var y = Math.ceil(this.height*config.y/100/this.config.itemSize);
+            //отступаем на клетку от краев, чтобы нарисовать змейку в рамках холста
+            if(config.y > 0){
+                y--;
+            }
+            if(config.x > 0){
+                x--;
+            }
+            //центруем стартовые позиции
+            if(config.x > 0 && config.x < 100 && config.y > 0 && config.y < 100){
+                switch (config.direction){
+                    case 'right':
+                        x++;
+                        break;
+                    case 'left':
+                        x--;
+                        break;
+                    case 'up':
+                        y-=2;
+                        break;
+                    case 'down':
+                        y+=2;
+                        break;
+                }
+            }
 
             for (var i = 0; i < this.config.snakeSize; i++) {
                 this.snakeArray[index]['cells'].unshift({x: x, y: y});
@@ -262,11 +310,12 @@
                 snake.cells.unshift(head);
             }
 
-            /*for(var i = 0; i < this.snakeArray.length; i++){
+            for(var i = 0; i < this.snakeArray.length; i++){
                 var snake = this.snakeArray[i];
                 if (snake.dead) {
                     continue;
                 }
+                testSnakeHead:
                 for(var j = 0; j < this.snakeArray.length; j++) {
                     if(j == i){
                         continue;
@@ -276,11 +325,18 @@
                         continue;
                     }
                     for(var k in testSnake.cells){
-
+                        if(snake.new_coordinates.x == testSnake.cells[k].x && snake.new_coordinates.y == testSnake.cells[k].y){
+                            this.die(snake);
+                            //необходимо проверить не является ли это взаимным столкновением
+                            //возможны 2 варианта: "голова в голове" и "взаимное проглатывание до второй ячейки"
+                            if(k == 0 || k == 1 && testSnake.new_coordinates.x == snake.cells[1].x && testSnake.new_coordinates.y == snake.cells[1].y){
+                                this.die(testSnake);
+                            }
+                            break testSnakeHead;//прерываем циклы по тестируемым змеям
+                        }
                     }
-
                 }
-            }*/
+            }
         };
 
         this.drawSnakes = function(){
@@ -307,7 +363,13 @@
         this.createFood = function(){
             if(debug)
                 debugger;
-            var countFood = Math.round(this.snakeArray.length/2);
+            var aliveSnakes = 0;
+            for (var i in this.snakeArray){
+                if(!this.snakeArray[i].dead){
+                    aliveSnakes++;
+                }
+            }
+            var countFood = Math.round(aliveSnakes/2);
             for (var i in this.foodArray){
                 if(this.foodArray[i]['eaten']){
                     delete this.foodArray[i];
@@ -341,20 +403,95 @@
             }
         };
         this.redraw = function(){
+            /**
+             * последовательность вызовов определяет слои на холсте.
+             */
             if(debug)
                 debugger;
             this.prepareCanvas();
-            this.prepareMoveSnakes();
-            this.checkSnakeCollision();
+            if(this.game.started && !this.game.finished) {
+                this.prepareMoveSnakes();
+                this.checkSnakeCollision();
+            }
             this.drawSnakes();
             this.createFood();
             this.drawFood();
+            if(!this.game.started){
+                this.countDown();
+            }
+            if(this.game.finished){
+                if(this.drawResultsAndStop()){
+                    return;
+                }
+            }
             this.game_loop = setTimeout(function(){
                 if(debug)
                     debugger;
                 application.redraw();
-            }, this.config.interval);
+            }, this.game.interval);
 
+        };
+
+        this.countDown = function(){
+            if(this.game.countDown < 0){
+                this.game.countDown = this.config.countDown;
+                this.game.interval = this.config.interval;
+                this.game.started = true;
+                return;
+            }
+            this.context.font = '20px sans-serif';
+            this.context.textAlign = 'center';
+            this.context.textBaseline = 'middle';
+            var text = this.game.countDown;
+            if(this.game.countDown == 0){
+                text = 'START';
+            }
+            this.context.fillText(text, this.width/2, this.height/2);
+            this.context.font = this.config.font;
+            this.context.textAlign = 'start';
+            this.context.textBaseline = 'bottom';
+            this.game.countDown--;
+            this.game.interval = 1000; // секунда
+        };
+
+        this.drawResultsAndStop = function(){
+            switch (this.game.type){
+                case 'last':
+                        for(var i in this.snakeArray){
+                            if(typeof this.snakeArray[i].dead != "undefined" &&!this.snakeArray[i].dead){
+                                this.game.winner = i;
+                                break;
+                            }
+                        }
+                    break;
+                default:
+                    console.error('Unknown game type');
+            }
+
+            this.context.font = '20px sans-serif';
+            this.context.textAlign = 'center';
+            this.context.textBaseline = 'middle';
+            var text = 'dead heat';
+            if(this.game.winner){
+                text = 'Player '+ this.game.winner + ' win!';
+            }
+            this.context.fillText(text, this.width/2, this.height/2-15);
+            text = 'game will restart after ' + this.game.countDown +' second';
+            if(this.game.countDown != 1){
+                text += 's';
+            }
+            this.context.fillText(text, this.width/2, this.height/2+15);
+            this.context.font = this.config.font;
+            this.context.textAlign = 'start';
+            this.context.textBaseline = 'bottom';
+            this.game.countDown--;
+            this.game.interval = 1000; // секунда
+
+            if(this.game.countDown < 0){
+                this.reinit();
+                return true;
+            }
+            return false;
         };
 
         this.checkSelfAndWallCollision = function(coordinates, snake) {
@@ -378,12 +515,21 @@
                 debugger;
             snake.dead = true;
             snake.will_die = false;
-            for(var i = 0; i < application.snakeArray.length; i++) {
-                if(!application.snakeArray[i]['dead']){
-                    return;
+            if(this.game.type == "last") {
+                var countAlive = 0;
+                for (var i = 0; i < application.snakeArray.length; i++) {
+                    if (!application.snakeArray[i]['dead']){
+                        countAlive++;
+                    }
+                }
+                if(countAlive < 2){
+                    this.finish();
                 }
             }
-            this.reinit();
+        };
+        this.finish = function(){
+            this.game.finished = true;
+            this.game.countDown = 10;
         };
 
         this.reinit();
