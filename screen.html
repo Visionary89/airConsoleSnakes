@@ -3,183 +3,568 @@
 <head lang="en">
     <meta charset="UTF-8">
     <title></title>
-    <script type="text/javascript" src="http://www.airconsole.com/api/airconsole-1.2.js"></script>
-    <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js"></script>
+    <script type="text/javascript" src="https://www.airconsole.com/api/airconsole-1.3.0.js"></script>
+    <script type="text/javascript" src="https://code.jquery.com/jquery-1.12.0.min.js"></script>
     <style>
+        html,body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
         body{
-            margin: 10px;
+            /*margin: 10px;*/
             background: #2b2b2b;
         }
     </style>
 </head>
-<body>
-<script type="text/javascript">
-    var air_console = new AirConsole();
+<body onload="window.screenApp = new makeSnakeMultiplayerApplication()">
+<script type="application/javascript">
+    /** todo:
+     * экран готовности к игре
+     */
+    var debug = false;
+    //debugger;
 
-    //Lets save the cell width in a variable for easy control
-    var cw = 10;
-    var d;
-    var food;
-    var score;
+    function makeSnakeMultiplayerApplication(){
+        "use strict";
+        if(debug)
+            debugger;
+        var application = this;
+        this.airconsole = new AirConsole();
+        this.config = {
+            itemSize: 10,
+            padding: 20,
+            countDown: 3,
+            interval: 100,
+            snakeSize: 5,
+            background_color: '#2b2b2b',
+            dead_color: '#2f2f2f',
+            border_color: '#bbbbbb',
+            border_cell_color: '#191919',
+            player_colors: [
+                '#77bbff', '#ff9900', '#99ee00', '#f4359e',
+                '#651067', '#b82e2e', '#329262', '#9c5935',
+                '#3b3eee', '#fb9a99', '#ccbb22', '#cab2d6',
+                '#aaffaa', '#b91383', '#008800', '#660000',
+                '#ff0000', '#ffff00', '#00ff00', '#0000ff',
+                '#743411', '#111177', '#b77322', '#66aa00',
+                '#00aac6', '#a9c413', '#9e8400', '#5574a6',
+                '#777777', '#999999', '#bbbbbb', '#eeeeee'
+            ]
+        };
+        this.playerStartConfig = [
+            {x:0,y:0,direction:'right'},
+            {x:100,y:0,direction:'left'},
+            {x:0,y:100,direction:'right'},
+            {x:100,y:100,direction:'left'},
+            {x:50,y:49,direction:'up'},
+            {x:51,y:50,direction:'right'},
+            {x:50,y:51,direction:'down'},
+            {x:49,y:50,direction:'left'},
+            {x:0,y:50,direction:'right'},
+            {x:100,y:50,direction:'left'}
+        ];
 
-    air_console.onReady = function() {
-        for (var i = AirConsole.SCREEN + 1; i < this.devices; i++) {
-            var device = this.devices[i];
-            if (device !== undefined) {
-                console.log(device)
+
+        Object.prototype.length = function(){
+            var count = 0;
+            for (var k in this) {
+                if (this.hasOwnProperty(k)) {
+                    ++count;
+                }
             }
+            return count;
+        };
+
+        function clone(obj) {
+            var copy;
+
+            // Handle the 3 simple types, and null or undefined
+            if (null == obj || "object" != typeof obj) return obj;
+
+            // Handle Date
+            if (obj instanceof Date) {
+                copy = new Date();
+                copy.setTime(obj.getTime());
+                return copy;
+            }
+
+            // Handle Array
+            if (obj instanceof Array) {
+                copy = [];
+                for (var i = 0, len = obj.length; i < len; i++) {
+                    copy[i] = clone(obj[i]);
+                }
+                return copy;
+            }
+
+            // Handle Object
+            if (obj instanceof Object) {
+                copy = {};
+                for (var attr in obj) {
+                    if (obj.hasOwnProperty(attr)) copy[attr] = clone(obj[attr]);
+                }
+                return copy;
+            }
+
+            throw new Error("Unable to copy obj! Its type isn't supported.");
         }
-        $(document).ready(function() {
-            //Canvas stuff
-            var canvas = $("#canvas")[0];
-            $(canvas).attr('width',$('body').width()-20);
-            $(canvas).attr('height',$('body').height()-20);
-            var ctx = canvas.getContext("2d");
-            var w = $("#canvas").width();
-            var h = $("#canvas").height();
 
+        //init block
+        var $canvas = $("#canvas");
+        var width = $('body').width() - this.config.padding;
+        width = Math.ceil(width/this.config.itemSize)*this.config.itemSize;
+        $canvas.attr('width', width);
+        var height = $('body').height() - this.config.padding;
+        height = Math.ceil(height/this.config.itemSize)*this.config.itemSize;
+        $canvas.attr('height', height);
+        this.context = canvas.getContext("2d");
+        this.config.font = this.context.font;
+        this.width = $canvas.width();
+        this.height = $canvas.height();
 
-            //Lets create the snake now
-            var snake_array; //an array of cells to make up the snake
+        this.snakeArray = [];
+        this.foodArray = {};
 
-            function init() {
-                d = "right"; //default direction
-                create_snake();
-                create_food(); //Now we can see the food particle
-                //finally lets display the score
-                score = 0;
+        this.reinit = function() {
+            if(debug)
+                debugger;
+            this.snakeArray = [];
+            this.foodArray = {};
 
-                //Lets move the snake now using a timer which will trigger the paint function
-                //every 60ms
-                if (typeof game_loop != "undefined") clearInterval(game_loop);
-                game_loop = setInterval(paint, 60);
+            /**
+             * типы игры:
+             * last - последний выживший победил
+             * (не реализовано) time - самый длинный за опрделенное время поюедил
+             */
+            this.game = {
+                type: 'last',
+                started: false,
+                finished: false,
+                winner: false,
+                interval: this.config.interval,
+                countDown: this.config.countDown
+            };
+            this.players = [];
+            //только для демонстрации добавим несколько змеек
+            var index = 0;
+            for (var i in this.airconsole.devices) {
+                var device = this.airconsole.devices[i];
+                if(i != AirConsole.SCREEN && typeof device == "object" && device != null){
+                    this.players[i] = index;
+                    this.createSnake(index++);
+                }
             }
+            this.createFood();
 
-            init();
 
-            function create_snake() {
-                var length = 5; //Length of the snake
-                snake_array = []; //Empty array to start with
-                for (var i = length - 1; i >= 0; i--) {
-                    //This will create a horizontal snake starting from the top left
-                    snake_array.push({x: i, y: 0});
+            if (typeof this.game_loop != "undefined"){
+                clearTimeout(this.game_loop);
+            }
+            this.redraw();
+        };
+
+
+        this.prepareCanvas = function(){
+            if(debug)
+                debugger;
+            this.context.fillStyle = this.config.background_color;
+            this.context.fillRect(0, 0, this.width, this.height);
+            this.context.strokeStyle = this.config.border_color;
+            this.context.strokeRect(0, 0, this.width, this.height);
+        };
+
+        this.paintCell = function(coords, color) {
+            if(debug)
+                debugger;
+            this.context.fillStyle = color;
+            this.context.fillRect(coords.x * this.config.itemSize, coords.y * this.config.itemSize, this.config.itemSize, this.config.itemSize);
+            this.context.strokeStyle = this.config.border_cell_color;
+            this.context.strokeRect(coords.x * this.config.itemSize, coords.y * this.config.itemSize, this.config.itemSize, this.config.itemSize);
+        };
+
+        this.createSnake = function(index) {
+            if(debug)
+                debugger;
+            //var index = this.snakeArray.length;
+            this.snakeArray[index] = {
+                cells: [],
+                direction:'',
+                new_direction: false,
+                will_die: false,
+                dead: false
+            };
+            //каждая змейка имеет свое стартовое положение и направление движения
+            var config = this.playerStartConfig[index];
+            this.snakeArray[index]['direction'] = config.direction;
+            var x = Math.ceil(this.width*config.x/100/this.config.itemSize);
+            var y = Math.ceil(this.height*config.y/100/this.config.itemSize);
+            //отступаем на клетку от краев, чтобы нарисовать змейку в рамках холста
+            if(config.y > 0){
+                y--;
+            }
+            if(config.x > 0){
+                x--;
+            }
+            //центруем стартовые позиции
+            if(config.x > 0 && config.x < 100 && config.y > 0 && config.y < 100){
+                switch (config.direction){
+                    case 'right':
+                        x++;
+                        break;
+                    case 'left':
+                        x--;
+                        break;
+                    case 'up':
+                        y-=2;
+                        break;
+                    case 'down':
+                        y+=2;
+                        break;
                 }
             }
 
-            //Lets create the food now
-            function create_food() {
-                food = {
-                    x: Math.round(Math.random() * (w - cw) / cw),
-                    y: Math.round(Math.random() * (h - cw) / cw)
-                };
-                //This will create a cell with x/y between 0-44
-                //Because there are 45(450/10) positions accross the rows and columns
+            for (var i = 0; i < this.config.snakeSize; i++) {
+                this.snakeArray[index]['cells'].unshift({x: x, y: y});
+                switch (config.direction){
+                    case 'right':
+                        x++;
+                        break;
+                    case 'left':
+                        x--;
+                        break;
+                    case 'up':
+                        y--;
+                        break;
+                    case 'down':
+                        y++;
+                        break;
+                }
+            }
+        };
+
+
+        this.prepareMoveSnakes = function(){
+            if(debug)
+                debugger;
+            for(var i = 0; i < this.snakeArray.length; i++) {
+                var snake = this.snakeArray[i];
+                if (typeof snake != "undefined" && snake.dead == false) {
+                    var direction = snake.new_direction;
+                    if (typeof direction == "undefined" || direction == false) {
+                        direction = snake.direction;
+                    }
+                    var new_coordinates = clone(snake.cells[0]);
+                    switch (direction){
+                        case 'right':
+                            new_coordinates.x++;
+                            break;
+                        case 'left':
+                            new_coordinates.x--;
+                            break;
+                        case 'up':
+                            new_coordinates.y--;
+                            break;
+                        case 'down':
+                            new_coordinates.y++;
+                            break;
+                    }
+
+                    if (this.checkSelfAndWallCollision(new_coordinates, snake)) {
+                        snake.will_die = true;
+                    }
+                    snake.new_coordinates = clone(new_coordinates);
+
+                    //food section
+                    var foodKey = new_coordinates.x+','+new_coordinates.y;
+                    if(foodKey in this.foodArray){
+                        this.foodArray[foodKey]['eaten'] = true;
+                        //todo other food type effect
+                        snake.new_effect = 'increment';
+                    }
+                }
+            }
+        };
+
+        this.checkSnakeCollision = function(){
+            if(debug)
+                debugger;
+            for(var i = 0; i < this.snakeArray.length; i++) {
+                var snake = this.snakeArray[i];
+                if(snake.will_die){
+                    this.die(snake);
+                }
+                if (snake.dead) {
+                    continue;
+                }
+                var head = {'x': snake.new_coordinates.x, 'y': snake.new_coordinates.y};
+                //todo реализовать прочие типы действий
+                switch (snake.new_effect) {
+                    case 'increment':
+                        break;
+                    default:
+                        snake.cells.pop();
+                        break;
+                }
+                snake.new_effect = '';
+                if(snake.new_direction){
+                    snake.direction = snake.new_direction;
+                    snake.new_direction = '';
+                }
+                snake.cells.unshift(head);
             }
 
-            //Lets paint the snake now
-            function paint() {
-                //To avoid the snake trail we need to paint the BG on every frame
-                //Lets paint the canvas now
-                ctx.fillStyle = "#2b2b2b";
-                ctx.fillRect(0, 0, w, h);
-                ctx.strokeStyle = "#bbb";
-                ctx.strokeRect(0, 0, w, h);
+            for(var i = 0; i < this.snakeArray.length; i++){
+                var snake = this.snakeArray[i];
+                if (snake.dead) {
+                    continue;
+                }
+                testSnakeHead:
+                        for(var j = 0; j < this.snakeArray.length; j++) {
+                            if(j == i){
+                                continue;
+                            }
+                            var testSnake = this.snakeArray[j];
+                            if(testSnake.dead){
+                                continue;
+                            }
+                            for(var k in testSnake.cells){
+                                if(snake.new_coordinates.x == testSnake.cells[k].x && snake.new_coordinates.y == testSnake.cells[k].y){
+                                    this.die(snake);
+                                    //необходимо проверить не является ли это взаимным столкновением
+                                    //возможны 2 варианта: "голова в голове" и "взаимное проглатывание до второй ячейки"
+                                    if(k == 0 || k == 1 && testSnake.new_coordinates.x == snake.cells[1].x && testSnake.new_coordinates.y == snake.cells[1].y){
+                                        this.die(testSnake);
+                                    }
+                                    break testSnakeHead;//прерываем циклы по тестируемым змеям
+                                }
+                            }
+                        }
+            }
+        };
 
-                //The movement code for the snake to come here.
-                //The logic is simple
-                //Pop out the tail cell and place it infront of the head cell
-                var nx = snake_array[0].x;
-                var ny = snake_array[0].y;
-                //These were the position of the head cell.
-                //We will increment it to get the new head position
-                //Lets add proper direction based movement now
-                if (d == "right") nx++;
-                else if (d == "left") nx--;
-                else if (d == "up") ny--;
-                else if (d == "down") ny++;
+        this.drawSnakes = function(){
+            if(debug)
+                debugger;
+            //мертвые змеи должы быть в нижнем слое
+            for(var i = 0; i < this.snakeArray.length; i++) {
+                var snake = this.snakeArray[i];
+                if (typeof snake != "undefined" && snake.dead == true) {
+                    for(var j in snake.cells){
+                        this.paintCell(snake.cells[j],this.config.dead_color);
+                    }
+                }
+            }
+            for(var i = 0; i < this.snakeArray.length; i++) {
+                var snake = this.snakeArray[i];
+                if (typeof snake != "undefined" && snake.dead == false) {
+                    for(var j in snake.cells){
+                        this.paintCell(snake.cells[j],this.config.player_colors[i]);
+                    }
+                }
+            }
+        };
+        this.createFood = function(){
+            if(debug)
+                debugger;
+            var aliveSnakes = 0;
+            for (var i in this.snakeArray){
+                if(!this.snakeArray[i].dead){
+                    aliveSnakes++;
+                }
+            }
+            var countFood = Math.round(aliveSnakes/2);
+            for (var i in this.foodArray){
+                if(this.foodArray[i]['eaten']){
+                    delete this.foodArray[i];
+                }
+            }
+            var needAddFood = countFood - this.foodArray.length();
+            for (var i = 0; i < needAddFood; i++){
+                //todo: add food type (normal, huge, poison, slow, fast)
+                var x = Math.round(Math.random() * (this.width - this.config.itemSize) / this.config.itemSize);
+                var y = Math.round(Math.random() * (this.height - this.config.itemSize) / this.config.itemSize);
+                this.foodArray[x+','+y] = {'x':x, 'y':y,eaten:false};
+            }
+        };
 
-                //Lets add the game over clauses now
-                //This will restart the game if the snake hits the wall
-                //Lets add the code for body collision
-                //Now if the head of the snake bumps into its body, the game will restart
-                if (nx == -1 || nx == w / cw || ny == -1 || ny == h / cw || check_collision(nx, ny, snake_array)) {
-                    //restart game
-                    init();
-                    //Lets organize the code a bit now.
+        this.drawFood = function(){
+            if(debug)
+                debugger;
+            for (var i in this.foodArray){
+
+                var centerX = this.config.itemSize*this.foodArray[i]['x'] + this.config.itemSize / 2;
+                var centerY = this.config.itemSize*this.foodArray[i]['y'] + this.config.itemSize / 2;
+                var radius = this.config.itemSize / 2;
+
+                this.context.beginPath();
+                this.context.arc(centerX, centerY, radius, 0, 2 * Math.PI, false);
+                this.context.fillStyle = "#eeeeee";
+                this.context.fill();
+                this.context.lineWidth = 1;
+                this.context.strokeStyle = this.config.border_cell_color;
+                this.context.stroke();
+            }
+        };
+        this.redraw = function(){
+            /**
+             * последовательность вызовов определяет слои на холсте.
+             */
+            if(debug)
+                debugger;
+            this.prepareCanvas();
+            if(this.game.started && !this.game.finished) {
+                this.prepareMoveSnakes();
+                this.checkSnakeCollision();
+            }
+            this.drawSnakes();
+            this.createFood();
+            this.drawFood();
+            if(!this.game.started){
+                this.countDown();
+            }
+            if(this.game.finished){
+                if(this.drawResultsAndStop()){
                     return;
                 }
-
-                //Lets write the code to make the snake eat the food
-                //The logic is simple
-                //If the new head position matches with that of the food,
-                //Create a new head instead of moving the tail
-                if (nx == food.x && ny == food.y) {
-                    var tail = {x: nx, y: ny};
-                    score++;
-                    //Create new food
-                    create_food();
-                }
-                else {
-                    var tail = snake_array.pop(); //pops out the last cell
-                    tail.x = nx;
-                    tail.y = ny;
-                }
-                //The snake can now eat the food.
-
-                snake_array.unshift(tail); //puts back the tail as the first cell
-
-                for (var i = 0; i < snake_array.length; i++) {
-                    var c = snake_array[i];
-                    //Lets paint 10px wide cells
-                    paint_cell(c.x, c.y);
-                }
-
-                //Lets paint the food
-                paint_cell(food.x, food.y);
-                //Lets paint the score
-                var score_text = "Score: " + score;
-                ctx.fillText(score_text, 5, h - 5)
             }
+            this.game_loop = setTimeout(function(){
+                if(debug)
+                    debugger;
+                application.redraw();
+            }, this.game.interval);
 
-            //Lets first create a generic function to paint cells
-            function paint_cell(x, y) {
-                ctx.fillStyle = "#2859D0";
-                ctx.fillRect(x * cw, y * cw, cw, cw);
-                ctx.strokeStyle = "#191919";
-                ctx.strokeRect(x * cw, y * cw, cw, cw);
-            }
-
-            function check_collision(x, y, array) {
-                //This function will check if the provided x/y coordinates exist
-                //in an array of cells or not
-                for (var i = 0; i < array.length; i++) {
-                    if (array[i].x == x && array[i].y == y)
-                        return true;
-                }
-                return false;
-            }
-        });
-
-
-
-
-
-
-
-
-
-            air_console.onMessage = function(from, data) {
-            //We will add another clause to prevent reverse gear
-            if(data == "left" && d != "right") d = "left";
-            else if(data == "up" && d != "down") d = "up";
-            else if(data == "right" && d != "left") d = "right";
-            else if(data == "down" && d != "up") d = "down";
-            //The snake is now keyboard controllable
         };
-    };
 
+        this.countDown = function(){
+            if(this.game.countDown < 0){
+                this.game.countDown = this.config.countDown;
+                this.game.interval = this.config.interval;
+                this.game.started = true;
+                return;
+            }
+            this.context.font = '20px sans-serif';
+            this.context.textAlign = 'center';
+            this.context.textBaseline = 'middle';
+            var text = this.game.countDown;
+            if(this.game.countDown == 0){
+                text = 'START';
+            }
+            this.context.fillText(text, this.width/2, this.height/2);
+            this.context.font = this.config.font;
+            this.context.textAlign = 'start';
+            this.context.textBaseline = 'bottom';
+            this.game.countDown--;
+            this.game.interval = 1000; // секунда
+        };
 
+        this.drawResultsAndStop = function(){
+            switch (this.game.type){
+                case 'last':
+                    for(var i in this.snakeArray){
+                        if(typeof this.snakeArray[i].dead != "undefined" &&!this.snakeArray[i].dead){
+                            this.game.winner = i;
+                            break;
+                        }
+                    }
+                    break;
+                default:
+                    console.error('Unknown game type');
+            }
 
+            this.context.font = '20px sans-serif';
+            this.context.textAlign = 'center';
+            this.context.textBaseline = 'middle';
+            var text = 'dead heat';
+            if(this.game.winner){
+                text = 'Player '+ this.game.winner + ' win!';
+            }
+            this.context.fillText(text, this.width/2, this.height/2-15);
+            text = 'game will restart after ' + this.game.countDown +' second';
+            if(this.game.countDown != 1){
+                text += 's';
+            }
+            this.context.fillText(text, this.width/2, this.height/2+15);
+            this.context.font = this.config.font;
+            this.context.textAlign = 'start';
+            this.context.textBaseline = 'bottom';
+            this.game.countDown--;
+            this.game.interval = 1000; // секунда
+
+            if(this.game.countDown < 0){
+                this.reinit();
+                return true;
+            }
+            return false;
+        };
+
+        this.checkSelfAndWallCollision = function(coordinates, snake) {
+            if(debug)
+                debugger;
+            //троверяем стены
+            if(coordinates.x < 0 || coordinates.x >= this.width / this.config.itemSize
+                    || coordinates.y < 0 || coordinates.y >= this.height / this.config.itemSize){
+                return true;
+            }
+            //проверяем поедание самого себя
+            for (var i = 0; i < snake.cells.length; i++) {
+                if (snake.cells[i].x == coordinates.x && snake.cells[i].y == coordinates.y)
+                    return true;
+            }
+            return false;
+        };
+
+        this.die = function(snake){
+            if(debug)
+                debugger;
+            snake.dead = true;
+            snake.will_die = false;
+            if(this.game.type == "last") {
+                var countAlive = 0;
+                for (var i = 0; i < application.snakeArray.length; i++) {
+                    if (!application.snakeArray[i]['dead']){
+                        countAlive++;
+                    }
+                }
+                if(countAlive < 2){
+                    this.finish();
+                }
+            }
+        };
+        this.finish = function(){
+            this.game.finished = true;
+            this.game.countDown = 10;
+        };
+
+        this.airconsole.onReady = function() {
+            for (var i = AirConsole.SCREEN + 1; i < this.devices; i++) {
+                var device = this.devices[i];
+                if (device !== undefined) {
+                    console.log(device)
+                }
+            }
+            application.airconsole.onMessage = function(from, data) {
+                //for(var i = 0; i < application.snakeArray.length; i++) {
+                    if(!application.game.started){
+                        return;
+                    }
+                    var snake = application.snakeArray[application.players[from]];
+                    //We will add another clause to prevent reverse gear
+                    var new_direction = '';
+                    if(snake.new_direction || snake.dead){
+                        return;
+                    }
+                    if (data == "left" && snake.direction != "right") new_direction = "left";
+                    else if (data == "up" && snake.direction != "down") new_direction = "up";
+                    else if (data == "right" && snake.direction != "left") new_direction = "right";
+                    else if (data == "down" && snake.direction != "up") new_direction = "down";
+
+                    snake.new_direction = new_direction;
+                //}
+            };
+            application.reinit();
+        };
+    }
 </script>
 <canvas id="canvas" width="450" height="450"></canvas>
 
